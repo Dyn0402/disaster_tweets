@@ -52,6 +52,14 @@ def visualize(data):
 
 
 def split_data(data, test_size, validation_size, seed):
+    """
+    Split original data into train, test, and validation sets.
+    :param data: Original data to split
+    :param test_size: Size of test set as percentage of original data set
+    :param validation_size: Size of validation set as percentage of original data set
+    :param seed: Seed to use when splitting data
+    :return:
+    """
     train, test = train_test_split(data, test_size=test_size, random_state=seed)
     train, validation = train_test_split(data, test_size=validation_size / (1 - test_size), random_state=seed)
 
@@ -98,6 +106,12 @@ def get_data(path):
 
 
 def hist_char_len(data, show=False):
+    """
+    Histogram the number of characters in each tweet.
+    :param data: Twitter data dataframe or dictionary with 'text' key containing list of tweets
+    :param show: True to show plot when function is called, false to postpone plt.show() call
+    :return:
+    """
     tweet_chars = [len(x) for x in data['text']]
     fig, ax = plt.subplots()
     ax = sns.histplot(tweet_chars, ax=ax, discrete=True)
@@ -107,6 +121,12 @@ def hist_char_len(data, show=False):
 
 
 def hist_word_len(data, show=False):
+    """
+    Histogram the number of words in each tweet, defined as character groups separated by a space.
+    :param data: Twitter data dataframe or dictionary with 'text' key containing list of tweets
+    :param show: True to show plot when function is called, false to postpone plt.show() call
+    :return:
+    """
     tweet_words = [len(x.split(' ')) for x in data['text']]
     fig, ax = plt.subplots()
     ax = sns.histplot(tweet_words, ax=ax, discrete=True)

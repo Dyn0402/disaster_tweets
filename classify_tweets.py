@@ -13,66 +13,66 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.naive_bayes import BernoulliNB
+from sklearn.naive_bayes import BernoulliNB, MultinomialNB
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score
-from sklearn.metrics import confusion_matrix
-from sklearn.metrics import f1_score
+from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, fbeta_score, make_scorer
+from sklearn.pipeline import Pipeline
 
+from clean_tweets import preProcess, testlam
 
-# def vectorize(train, test, vec_pars={'binary': True}):
-#     vec_binary = CountVectorizer(**vec_pars)
-#     train_tokens = vec_binary.fit_transform(train)
-#     test_tokens = vec_binary.transform(test)
-#
-#     return train_tokens, test_tokens
-#
-# train_vec, test_vec = train['target'], test['target']  # Create new train/test dataframes with targets. Keeps train/target from being modified.
-# train_vec['features'], test_vec['features'] = vectorize(train['text'], test['text'])  # Vectorize text and add as 'features' column to dataframes
-#
-# def eval_vs_hyperpar(train, test, model_func, var_par={}, hyper_pars={}):
-#     """
-#     Train and evaluate model for each parameter value given in var_par. Plot each evaluation metric as a function of this parameter.
-#     :param train: Training data
-#     :param test: Test data
-#     :param model_func: Function to fit model and generate evaluation metrics
-#     :param var_par: Dictionary with hyperparameter name as key and list of parameter values as value. The model will be evaluated at each value of this list. Currently only impelemted for single dictionary entry.
-#     :param hyper_pars: Additional hyper_parameters to pass to model. These remain static between evaluations of var_par values.
-#     :return:
-#     """
-#     for var_val in list(var_par.values())[0]:
-#         set_pars = hyper_pars.copy()
-#         model_func(train, test, )
-#
-# def random_forest(train, test, hyper_pars={}):
-#     vec_binary = CountVectorizer(binary=True)
-#     train_tokens = vec_binary.fit_transform(train['text'])
-#     test_tokens = vec_binary.transform(test['text'])
-#     model_rf = RandomForestClassifier(**hyper_pars)
-#     model_rf.fit(train_tokens, train['target'])
-#     eval_metrics = eval_model(model_rf, test_tokens, test['target'], 'Random Forest')
-#     return eval_metrics
+from IPython.display import display
 
-#Kaggle uses F1_Score for evaluation. We may want to generalize to fbeta score in the scenario where this model is actually implemented.
-
-beta = 2  # Weight
-fbeta_scorer = make_scorer(fbeta_score, beta=beta)
 
 def main():
     pars = init_pars()
     data = get_data(pars['path'] + pars['train_file'])
     # visualize(train)
-    train, test, validation = split_data(data, pars['test_size'], pars['validation_size'], pars['split_seed'])
-    train, test = clean_data(train, test)
-    train_tokens, test_tokens = transform_data(train, test)
-    models = model_data(train_tokens, train['target'])
-    model_evals = {}
-    for model_name, model in models.items():
-        model_evals.update({model_name: eval_model(model, test_tokens, test['target'], model_name)})
+    train, test = train, test = train_test_split(data, test_size=pars['test_size'], random_state=pars['split_seed'])
+    # train, test = clean_data(train, test)
 
-    print(model_evals)
+    beta = 2  # beta = 1 equivalent to f1 score
+    scorers = {'Accuracy Score': accuracy_score, 'F1 Score': f1_score,
+               f'F{beta} Score': lambda x, y: fbeta_score(x, y, beta=beta)}
+
+    fbeta_scorer = make_scorer(fbeta_score,
+                               beta=beta)  # fbeta is genaeralized f1 where beta is the weight of precision relative to recall
+    gs_scorers = {'Accuracy Score': make_scorer(accuracy_score), 'F1 Score': make_scorer(f1_score),
+                  f'F{beta} Score': fbeta_scorer}  # Use these for grid searches
+
+    count_vec_1 = CountVectorizer(tokenizer=testlam,
+                                  preprocessor=preProcess,
+                                  analyzer='word',
+                                  ngram_range=(1, 2))
+    # count_vec_1 = CountVectorizer(tokenizer=(lambda x: x),
+    #                               analyzer='word',
+    #                               ngram_range=(1, 2))
+    # for txt in train.text:
+    #     print(type(txt), txt)
+    X_train_countvec = count_vec_1.fit_transform(train.text)
+
+    MultiNB2 = MultinomialNB()
+    param = {'alpha': np.arange(0.01, 2.5, .01)}
+    gs2 = GridSearchCV(MultiNB2, param, scoring=gs_scorers['F1 Score'], cv=5, n_jobs=-1, verbose=1)
+    gs2_fit = gs2.fit(X_train_countvec, train.target)
+    gs2_res = gs2_fit.cv_results_
+    display(pd.DataFrame(gs2_res).sort_values('mean_test_score', ascending=False).head())
+
+    pipe = Pipeline([('cvec', count_vec_1), ('mnb', MultinomialNB())], memory=pars['path'][:-1])
+    param = dict(mnb__alpha=np.arange(0.01, 2.5, 1.3))
+    gspipe = GridSearchCV(pipe, param, scoring=gs_scorers['F1 Score'], cv=5, n_jobs=-1, verbose=1)
+    gspipe_fit = gspipe.fit(train.text, train.target)
+    gspipe_res = gspipe_fit.cv_results_
+    display(pd.DataFrame(gspipe_res).sort_values('mean_test_score', ascending=False).head())
+
+    # train_tokens, test_tokens = transform_data(train, test)
+    # models = model_data(train_tokens, train['target'])
+    # model_evals = {}
+    # for model_name, model in models.items():
+    #     model_evals.update({model_name: eval_model(model, test_tokens, test['target'], model_name)})
+
+    # print(model_evals)
 
     print('donzo')
 
@@ -82,8 +82,7 @@ def init_pars():
             'train_file': 'train.csv',
             'test_file': 'test.csv',
             'test_size': 0.2,
-            'validation_size': 0.2,
-            'split_seed': 34}
+            'split_seed': 42}
 
     return pars
 
@@ -92,21 +91,6 @@ def visualize(data):
     hist_char_len(data, False)
     hist_word_len(data, False)
     plt.show()
-
-
-def split_data(data, test_size, validation_size, seed):
-    """
-    Split original data into train, test, and validation sets.
-    :param data: Original data to split
-    :param test_size: Size of test set as percentage of original data set
-    :param validation_size: Size of validation set as percentage of original data set
-    :param seed: Seed to use when splitting data
-    :return:
-    """
-    train, test = train_test_split(data, test_size=test_size, random_state=seed)
-    train, validation = train_test_split(data, test_size=validation_size / (1 - test_size), random_state=seed)
-
-    return train, test, validation
 
 
 def clean_data(train, test):
